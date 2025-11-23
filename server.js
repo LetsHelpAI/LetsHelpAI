@@ -1,72 +1,61 @@
-// Basic AI Receptionist Server (no AI model added yet)
-// Handles incoming Twilio calls, gathers speech, and returns simple responses
-
 const express = require("express");
 const bodyParser = require("body-parser");
-const cors = require("cors");
-const twilio = require("twilio");
+const VoiceResponse = require("twilio").twiml.VoiceResponse;
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
-app.use(cors());
 
-// Root test endpoint
-app.get("/", (req, res) => {
-  res.send("LetsHelpAI backend is running.");
-});
+// --- RULE-BASED LOGIC ---
+// Edit responses inside this object.
+// Later you can load these from a client database.
+const rules = [
+  { keywords: ["hours", "open", "close"], reply: "Our business hours are 9 AM to 5 PM, Monday through Friday." },
+  { keywords: ["appointment", "schedule", "book"], reply: "I can take a note for an appointment. What time would you like?" },
+  { keywords: ["location", "address", "where"], reply: "We are located at 123 Main Street." },
+  { keywords: ["tour"], reply: "I can record a note for a tour. What day works best for you?" },
+];
 
-// Handle incoming calls from Twilio
+// Match caller input to rule
+function ruleEngine(transcript) {
+  transcript = transcript.toLowerCase();
+  for (const rule of rules) {
+    for (const k of rule.keywords) {
+      if (transcript.includes(k)) return rule.reply;
+    }
+  }
+  return "I'm sorry, I didn't understand. Could you repeat that?";
+}
+
+// --- MAIN CALL HANDLER ---
 app.post("/voice", (req, res) => {
-  const twiml = new twilio.twiml.VoiceResponse();
+  const twiml = new VoiceResponse();
 
-  // Greeting the caller
-  twiml.say(
-    {
-      voice: "alice"
-    },
-    "Hello, this is Lets Help A I, your virtual receptionist. How may I assist you today?"
-  );
-
-  // Ask caller for input
   twiml.gather({
     input: "speech",
-    action: "/process_speech",
-    method: "POST"
-  });
+    speechTimeout: "auto",
+    action: "/process",
+  }).say("Hello, this is the automated receptionist. How can I help you today?");
 
   res.type("text/xml");
   res.send(twiml.toString());
 });
 
-// Process the caller's speech
-app.post("/process_speech", (req, res) => {
-  const speechText = req.body.SpeechResult || "";
+// --- HANDLE SPEECH RECOGNITION ---
+app.post("/process", (req, res) => {
+  const transcript = req.body.SpeechResult || "";
+  const reply = ruleEngine(transcript);
 
-  const twiml = new twilio.twiml.VoiceResponse();
+  const twiml = new VoiceResponse();
+  twiml.say(reply);
 
-  // Placeholder response logic
-  // (Later we connect this to an AI model)
-  twiml.say(
-    {
-      voice: "alice"
-    },
-    `You said: ${speechText}. A more advanced response system will be added soon.`
-  );
-
-  // Continue listening
-  twiml.gather({
-    input: "speech",
-    action: "/process_speech",
-    method: "POST"
-  });
+  // Continue the conversation
+  twiml.redirect("/voice");
 
   res.type("text/xml");
   res.send(twiml.toString());
 });
 
-// Start server
+// --- START SERVER ---
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`LetsHelpAI server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log("Server running on port " + PORT));
+
